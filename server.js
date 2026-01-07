@@ -57,7 +57,7 @@ app.post('/add-redirect', async (req, res) => {
 app.get('/:key', async (req, res) => {
   const key = req.params.key;
 
-  // Ignore static files
+  // Ignore static files like me.html, favicon.ico, etc
   if (key.includes('.') || key.length < 4) {
     return res.status(404).send('Not found');
   }
@@ -71,9 +71,9 @@ app.get('/:key', async (req, res) => {
   const row = await db.getRedirect(key);
   if (!row) return res.status(404).send('Not found');
 
-  res.sendFile(path.join(__dirname, 'public', 'challenge.html'));
+  // IMPORTANT: pass key into challenge page
+  res.redirect('/challenge.html?rid=' + encodeURIComponent(key));
 });
-
 
 /* --------------------------------
    STEP 2: VERIFY
@@ -90,6 +90,10 @@ app.post('/verify', async (req, res) => {
   if (!d.plugins || d.plugins === 0) score += 20;
   if (!d.languages || d.languages === 0) score += 20;
 
+  if (!d.rid || typeof d.rid !== "string") {
+    return res.status(403).json({ ok: false });
+  }
+
   if (score >= 50) {
     return res.status(403).json({ ok: false });
   }
@@ -99,7 +103,7 @@ app.post('/verify', async (req, res) => {
       rid: d.rid,
       exp: Math.floor(Date.now() / 1000) + 60
     },
-    process.env.JWT_SECRET || 'CHANGE_THIS_SECRET'
+    process.env.JWT_SECRET
   );
 
   res.json({ ok: true, token });
@@ -110,7 +114,7 @@ app.post('/verify', async (req, res) => {
 --------------------------------- */
 app.get('/go', async (req, res) => {
   try {
-    const decoded = jwt.verify(req.query.token, process.env.JWT_SECRET || 'CHANGE_THIS_SECRET');
+    const decoded = jwt.verify(req.query.token, process.env.JWT_SECRET);
 
     const row = await db.getRedirect(decoded.rid);
     if (!row) return res.status(404).send('Not found');
