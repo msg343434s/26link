@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Preparing link...</title>
+</head>
+<body>
+<p>Preparing your link, please wait...</p>
+
+<!-- Honeypot -->
+<input type="text" id="hp" style="display:none">
+
+<script>
+const rid = location.pathname.split("/").pop();
+
+let mouseMoves = 0;
+let hadFocus = false;
+
+document.addEventListener("mousemove", () => mouseMoves++);
+window.addEventListener("focus", () => hadFocus = true);
+
+function isHeadless() {
+  return (
+    navigator.webdriver ||
+    !navigator.languages ||
+    navigator.languages.length === 0 ||
+    !navigator.plugins ||
+    navigator.plugins.length === 0
+  );
+}
+
+setTimeout(async () => {
+  const payload = {
+    rid,
+    mouseMoves,
+    hadFocus,
+    webdriver: navigator.webdriver === true,
+    headless: isHeadless(),
+    plugins: navigator.plugins.length,
+    languages: navigator.languages.length,
+    honeypot: document.getElementById("hp").value !== ""
+  };
+
+  const res = await fetch("/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  const json = await res.json();
+
+  if (json.ok) {
+    location.href = "/go?token=" + json.token;
+  } else {
+    document.body.innerHTML = "Access denied.";
+  }
+}, 3500);
+</script>
+</body>
+</html>
