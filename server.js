@@ -6,7 +6,7 @@ const path = require('path');
 const db = require('./db');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 1000;
 
 app.use(express.json());
 app.use(express.static('public'));
