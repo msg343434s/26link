@@ -54,7 +54,7 @@ app.post('/add-redirect', async (req, res) => {
 /* --------------------------------
    STEP 1: CHALLENGE PAGE
 --------------------------------- */
-app.get('/:key', async (req, res) => {
+app.get('/:key([a-zA-Z0-9_-]{4,})', async (req, res) => {
   const ua = req.headers['user-agent'] || '';
 
   if (/curl|wget|python|okhttp|scrapy|scanner|postman|headless/i.test(ua)) {
