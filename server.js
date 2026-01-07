@@ -54,18 +54,26 @@ app.post('/add-redirect', async (req, res) => {
 /* --------------------------------
    STEP 1: CHALLENGE PAGE
 --------------------------------- */
-app.get('/:key([a-zA-Z0-9_-]{4,})', async (req, res) => {
+app.get('/:key', async (req, res) => {
+  const key = req.params.key;
+
+  // Ignore static files
+  if (key.includes('.') || key.length < 4) {
+    return res.status(404).send('Not found');
+  }
+
   const ua = req.headers['user-agent'] || '';
 
   if (/curl|wget|python|okhttp|scrapy|scanner|postman|headless/i.test(ua)) {
     return res.status(404).send('Not found');
   }
 
-  const row = await db.getRedirect(req.params.key);
+  const row = await db.getRedirect(key);
   if (!row) return res.status(404).send('Not found');
 
   res.sendFile(path.join(__dirname, 'public', 'challenge.html'));
 });
+
 
 /* --------------------------------
    STEP 2: VERIFY
