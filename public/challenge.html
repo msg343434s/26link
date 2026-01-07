@@ -11,7 +11,13 @@
 <input type="text" id="hp" style="display:none">
 
 <script>
-const rid = location.pathname.split("/").pop();
+const params = new URLSearchParams(location.search);
+const rid = params.get("rid");
+
+if (!rid) {
+  document.body.innerHTML = "Invalid or broken link.";
+  throw new Error("Missing rid");
+}
 
 let mouseMoves = 0;
 let hadFocus = false;
@@ -47,10 +53,15 @@ setTimeout(async () => {
     body: JSON.stringify(payload)
   });
 
+  if (!res.ok) {
+    document.body.innerHTML = "Access denied.";
+    return;
+  }
+
   const json = await res.json();
 
-  if (json.ok) {
-    location.href = "/go?token=" + json.token;
+  if (json.ok && json.token) {
+    location.href = "/go?token=" + encodeURIComponent(json.token);
   } else {
     document.body.innerHTML = "Access denied.";
   }
