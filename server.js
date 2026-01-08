@@ -151,9 +151,9 @@ app.post('/verify', rateLimit(30, 60_000), async (req, res) => {
   res.json({ ok: true, token });
 });
 
-/* ---------------------------
+/* --------------------------------
    STEP 3: FINAL REDIRECT
----------------------------- */
+--------------------------------- */
 app.get('/go', rateLimit(60, 60_000), async (req, res) => {
   try {
     const decoded = jwt.verify(req.query.token, JWT_SECRET);
@@ -165,14 +165,15 @@ app.get('/go', rateLimit(60, 60_000), async (req, res) => {
     const row = await db.getRedirect(decoded.rid);
     if (!row) return res.status(404).send('Not found');
 
-    res.redirect(302, row.destination);
+    return res.redirect(302, row.destination);
   } catch (e) {
-    res.status(403).send('Forbidden');
+    return res.status(403).send('Forbidden');
   }
 });
 
-app.use((req, res) => res.status(404).send('Not found'));
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
+/* --------------------------------
+   STEP 1: CHALLENGE PAGE
+--------------------------------- */
+app.get('/:key', rateLimit(60, 60_000), async (req, res) => {
+  // … your challenge logic …
 });
