@@ -6,24 +6,20 @@ const path = require('path');
 const db = require('./db');
 
 const app = express();
-
-// Render may proxy traffic
-app.set("trust proxy", true);
+app.set("trust proxy", true); // required on Render
 
 const PORT = process.env.PORT || 10000;
 const JWT_SECRET = process.env.JWT_SECRET;
 
 if (!JWT_SECRET) {
-  console.error("JWT_SECRET missing");
+  console.error("JWT_SECRET missing. Set it in Render Environment.");
   process.exit(1);
 }
 
-// ----------------------
-// Middleware
-// ----------------------
 app.use(express.json());
 app.use(express.static('public'));
 
+// Security headers
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -33,38 +29,40 @@ app.use((req, res, next) => {
   next();
 });
 
-// ----------------------
-// Simple in-memory rate limiter
-// ----------------------
+/* ---------------------------
+   SIMPLE IN-MEMORY RATE LIMIT
+---------------------------- */
 const rate = new Map();
-
 function rateLimit(limit, windowMs) {
   return (req, res, next) => {
     const ip = req.ip;
     const now = Date.now();
+
     if (!rate.has(ip)) rate.set(ip, []);
     const arr = rate.get(ip).filter(t => now - t < windowMs);
     arr.push(now);
     rate.set(ip, arr);
-    if (arr.length > limit) return res.status(429).send("Too many requests");
+
+    if (arr.length > limit) {
+      return res.status(429).send("Too many requests");
+    }
     next();
   };
 }
 
-// ----------------------
-// Helpers
-// ----------------------
+/* ---------------------------
+   HELPERS
+---------------------------- */
 function generateShortKey() {
   return crypto.randomBytes(4).toString('base64url');
 }
-
 function hashUA(ua) {
   return crypto.createHash("sha256").update(ua || "").digest("hex");
 }
 
-// ----------------------
-// CREATE SHORT LINK
-// ----------------------
+/* ---------------------------
+   CREATE SHORT LINK
+---------------------------- */
 app.post('/add-redirect', rateLimit(20, 60_000), async (req, res) => {
   const { destination } = req.body;
   if (!destination || !/^https?:\/\//i.test(destination)) {
@@ -81,26 +79,19 @@ app.post('/add-redirect', rateLimit(20, 60_000), async (req, res) => {
     } catch (e) {}
   }
 
-  const protocol = req.protocol + '://';
-  const host = req.get('host');
-  const url = `${protocol}${host}/${key}`;
+  const url = `${req.protocol}://${req.get('host')}/${key}`;
   res.json({ redirectUrl: url });
 });
 
-// ----------------------
-// CHALLENGE PAGE
-// ----------------------
+/* ---------------------------
+   CHALLENGE PAGE
+---------------------------- */
 app.get('/:key', rateLimit(60, 60_000), async (req, res) => {
   const key = req.params.key;
 
-  // Block file access attempts
-  if (key.includes('.') || key.length < 4) {
-    return res.status(404).send('Not found');
-  }
+  if (key.includes('.') || key.length < 4) return res.status(404).send('Not found');
 
   const ua = req.headers['user-agent'] || '';
-
-  // Block obvious bots
   if (/curl|wget|python|okhttp|scrapy|scanner|postman|headless|axios|node/i.test(ua)) {
     return res.status(404).send('Not found');
   }
@@ -108,13 +99,13 @@ app.get('/:key', rateLimit(60, 60_000), async (req, res) => {
   const row = await db.getRedirect(key);
   if (!row) return res.status(404).send('Not found');
 
-  // Serve challenge page
-  return res.sendFile(path.join(__dirname, 'public', 'challenge.html'));
+  // Serve challenge page directly
+  res.sendFile(path.join(__dirname, 'public', 'challenge.html'));
 });
 
-// ----------------------
-// VERIFY HUMAN
-// ----------------------
+/* ---------------------------
+   VERIFY HUMAN
+---------------------------- */
 app.post('/verify', rateLimit(30, 60_000), async (req, res) => {
   const d = req.body;
   let score = 0;
@@ -135,7 +126,7 @@ app.post('/verify', rateLimit(30, 60_000), async (req, res) => {
   const token = jwt.sign(
     {
       rid: d.rid,
-      // Optional: store UA/IP, but skip strict binding for Render
+      ip: req.ip,               // optional: bind token to IP
       ua: hashUA(req.headers['user-agent']),
       exp: Math.floor(Date.now() / 1000) + 60
     },
@@ -145,31 +136,28 @@ app.post('/verify', rateLimit(30, 60_000), async (req, res) => {
   res.json({ ok: true, token });
 });
 
-// ----------------------
-// FINAL REDIRECT
-// ----------------------
+/* ---------------------------
+   FINAL REDIRECT
+---------------------------- */
 app.get('/go', rateLimit(60, 60_000), async (req, res) => {
   try {
     const decoded = jwt.verify(req.query.token, JWT_SECRET);
 
+    // Optional: temporarily disable IP/UA binding for testing
+    // if (decoded.ip !== req.ip) return res.status(403).send("Forbidden");
+    // if (decoded.ua !== hashUA(req.headers['user-agent'])) return res.status(403).send("Forbidden");
+
     const row = await db.getRedirect(decoded.rid);
     if (!row) return res.status(404).send('Not found');
 
-    // Proxy-safe: don't check IP
     return res.redirect(302, row.destination);
   } catch (e) {
     return res.status(403).send('Forbidden');
   }
 });
 
-// ----------------------
-// 404 fallback
-// ----------------------
+// Fallback 404
 app.use((req, res) => res.status(404).send('Not found'));
 
-// ----------------------
-// START SERVER
-// ----------------------
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// Listen on Render port
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
