@@ -11,12 +11,11 @@
 <input type="text" id="hp" style="display:none">
 
 <script>
-const params = new URLSearchParams(location.search);
-const rid = params.get("rid");
+const rid = location.pathname.split("/").pop();
 
-if (!rid) {
-  document.body.innerHTML = "Invalid or broken link.";
-  throw new Error("Missing rid");
+if (!rid || rid.length < 4) {
+  document.body.innerHTML = "Invalid link.";
+  throw new Error("Invalid rid");
 }
 
 let mouseMoves = 0;
@@ -65,7 +64,7 @@ setTimeout(async () => {
   } else {
     document.body.innerHTML = "Access denied.";
   }
-}, 3500);
+}, 2000 + Math.random() * 2000); // random delay 2–4s
 </script>
 </body>
 </html>
