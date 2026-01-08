@@ -128,15 +128,15 @@ app.post('/verify', rateLimit(30, 60_000), async (req, res) => {
   const d = req.body;
   let score = 0;
 
+ if (d.webdriver) score += 50;
+  if (d.headless) score += 50;
+  if (!d.mouseMoves || d.mouseMoves < 3) score += 30;
+  if (!d.hadFocus) score += 20;
   if (d.honeypot) score += 100;
-  if (d.webdriver) score += 80;
-  if (d.headless) score += 80;
-  if (!d.mouseMoves || d.mouseMoves < 2) score += 10;
-  if (!d.hadFocus) score += 10;
-  if (!d.plugins || d.plugins === 0) score += 10;
-  if (!d.languages || d.languages === 0) score += 10;
+  if (!d.plugins || d.plugins === 0) score += 20;
+  if (!d.languages || d.languages === 0) score += 20;
 
-  if (score >= 80) return res.status(403).json({ ok: false });
+  if (score >= 50) return res.status(403).json({ ok: false });
 
   const token = jwt.sign(
     {
