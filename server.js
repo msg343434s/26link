@@ -8,17 +8,23 @@ const db = require('./db');
 const app = express();
 app.set("trust proxy", true);
 
-const PORT = process.env.PORT || 10000;
+const PORT = process.env.PORT;
 const JWT_SECRET = process.env.JWT_SECRET;
 
+if (!PORT) {
+  console.error("PORT missing in .env");
+  process.exit(1);
+}
+
 if (!JWT_SECRET) {
-  console.error("JWT_SECRET missing");
+  console.error("JWT_SECRET missing in .env");
   process.exit(1);
 }
 
 app.use(express.json());
 app.use(express.static('public'));
 
+// SECURITY HEADERS
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -85,7 +91,6 @@ app.post('/add-redirect', rateLimit(20, 60_000), async (req, res) => {
 
   const protocol = req.protocol + '://';
   const host = req.get('host');
-
   const url = `${protocol}${host}/${key}`;
 
   res.json({ redirectUrl: url });
@@ -97,7 +102,7 @@ app.post('/add-redirect', rateLimit(20, 60_000), async (req, res) => {
 app.get('/:key', rateLimit(60, 60_000), async (req, res) => {
   const key = req.params.key;
 
-  // Block file access attempts
+  // Block invalid access
   if (key.includes('.') || key.length < 4) {
     return res.status(404).send('Not found');
   }
@@ -112,7 +117,7 @@ app.get('/:key', rateLimit(60, 60_000), async (req, res) => {
   const row = await db.getRedirect(key);
   if (!row) return res.status(404).send('Not found');
 
-  // Serve challenge internally (NO redirect)
+  // Serve challenge page
   return res.sendFile(path.join(__dirname, 'public', 'challenge.html'));
 });
 
@@ -151,16 +156,17 @@ app.post('/verify', rateLimit(30, 60_000), async (req, res) => {
   res.json({ ok: true, token });
 });
 
-/* --------------------------------
+/* ---------------------------
    STEP 3: FINAL REDIRECT
---------------------------------- */
+---------------------------- */
 app.get('/go', rateLimit(60, 60_000), async (req, res) => {
   try {
     const decoded = jwt.verify(req.query.token, JWT_SECRET);
 
     // Bind token to IP + UA
-    if (decoded.ip !== req.ip) return res.status(403).send("Forbidden");
-    if (decoded.ua !== hashUA(req.headers['user-agent'])) return res.status(403).send("Forbidden");
+    if (decoded.ip !== req.ip || decoded.ua !== hashUA(req.headers['user-agent'])) {
+      return res.status(403).send("Forbidden");
+    }
 
     const row = await db.getRedirect(decoded.rid);
     if (!row) return res.status(404).send('Not found');
@@ -171,9 +177,10 @@ app.get('/go', rateLimit(60, 60_000), async (req, res) => {
   }
 });
 
-/* --------------------------------
-   STEP 1: CHALLENGE PAGE
---------------------------------- */
-app.get('/:key', rateLimit(60, 60_000), async (req, res) => {
-  // … your challenge logic …
+// Catch-all 404
+app.use((req, res) => res.status(404).send('Not found'));
+
+// Listen on Render port
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
