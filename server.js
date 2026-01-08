@@ -6,7 +6,7 @@ const path = require('path');
 const db = require('./db');
 
 const app = express();
-app.set("trust proxy", true); // Required for Render
+app.set("trust proxy", true); // required on Render
 
 const PORT = process.env.PORT || 10000;
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -43,7 +43,9 @@ function rateLimit(limit, windowMs) {
     arr.push(now);
     rate.set(ip, arr);
 
-    if (arr.length > limit) return res.status(429).send("Too many requests");
+    if (arr.length > limit) {
+      return res.status(429).send("Too many requests");
+    }
     next();
   };
 }
@@ -54,7 +56,6 @@ function rateLimit(limit, windowMs) {
 function generateShortKey() {
   return crypto.randomBytes(4).toString('base64url');
 }
-
 function hashUA(ua) {
   return crypto.createHash("sha256").update(ua || "").digest("hex");
 }
@@ -71,7 +72,10 @@ app.post('/add-redirect', rateLimit(20, 60_000), async (req, res) => {
   let key, saved = false;
   while (!saved) {
     key = generateShortKey();
-    try { await db.addRedirect(key, destination); saved = true; } catch (e) {}
+    try {
+      await db.addRedirect(key, destination);
+      saved = true;
+    } catch (e) {}
   }
 
   const url = `${req.protocol}://${req.get('host')}/${key}`;
@@ -79,35 +83,10 @@ app.post('/add-redirect', rateLimit(20, 60_000), async (req, res) => {
 });
 
 /* ---------------------------
-   FINAL REDIRECT (/go) — MUST BE BEFORE /:key
----------------------------- */
-app.get('/go', rateLimit(60, 60_000), async (req, res) => {
-  const token = req.query.token;
-  if (!token) return res.status(400).send("Missing token");
-
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-
-    // Optional: IP/UA binding (disable for testing if needed)
-    // if (decoded.ip !== req.ip) return res.status(403).send("Forbidden");
-    // if (decoded.ua !== hashUA(req.headers['user-agent'])) return res.status(403).send("Forbidden");
-
-    const row = await db.getRedirect(decoded.rid);
-    if (!row) return res.status(404).send('Not found');
-
-    return res.redirect(302, row.destination);
-  } catch (e) {
-    return res.status(403).send('Forbidden');
-  }
-});
-
-/* ---------------------------
    CHALLENGE PAGE
 ---------------------------- */
 app.get('/:key', rateLimit(60, 60_000), async (req, res) => {
   const key = req.params.key;
-
-  // Block file access attempts
   if (key.includes('.') || key.length < 4) return res.status(404).send('Not found');
 
   const ua = req.headers['user-agent'] || '';
@@ -128,22 +107,26 @@ app.post('/verify', rateLimit(30, 60_000), async (req, res) => {
   const d = req.body;
   let score = 0;
 
- if (d.webdriver) score += 50;
-  if (d.headless) score += 50;
-  if (!d.mouseMoves || d.mouseMoves < 3) score += 30;
-  if (!d.hadFocus) score += 20;
+  // Hard bot signals
   if (d.honeypot) score += 100;
-  if (!d.plugins || d.plugins === 0) score += 20;
-  if (!d.languages || d.languages === 0) score += 20;
+  if (d.webdriver) score += 80;
+  if (d.headless) score += 80;
 
-  if (score >= 50) return res.status(403).json({ ok: false });
+  // Soft signals
+  if (!d.mouseMoves || d.mouseMoves < 2) score += 10;
+  if (!d.hadFocus) score += 10;
+  if (!d.plugins || d.plugins === 0) score += 10;
+  if (!d.languages || d.languages === 0) score += 10;
 
+  if (score >= 80) return res.status(403).json({ ok: false });
+
+  // Strict IP + UA binding
   const token = jwt.sign(
     {
       rid: d.rid,
       ip: req.ip,
       ua: hashUA(req.headers['user-agent']),
-      exp: Math.floor(Date.now() / 1000) + 60
+      exp: Math.floor(Date.now() / 1000) + 60 // 1 minute expiry
     },
     JWT_SECRET
   );
@@ -151,8 +134,28 @@ app.post('/verify', rateLimit(30, 60_000), async (req, res) => {
   res.json({ ok: true, token });
 });
 
+/* ---------------------------
+   FINAL REDIRECT (STRICT)
+---------------------------- */
+app.get('/go', rateLimit(60, 60_000), async (req, res) => {
+  try {
+    const decoded = jwt.verify(req.query.token, JWT_SECRET);
+
+    // Enforce same IP + UA
+    if (decoded.ip !== req.ip) return res.status(403).send("Forbidden: IP mismatch");
+    if (decoded.ua !== hashUA(req.headers['user-agent'])) return res.status(403).send("Forbidden: UA mismatch");
+
+    const row = await db.getRedirect(decoded.rid);
+    if (!row) return res.status(404).send('Not found');
+
+    return res.redirect(302, row.destination);
+  } catch (e) {
+    return res.status(403).send('Forbidden: invalid token');
+  }
+});
+
 // Fallback 404
 app.use((req, res) => res.status(404).send('Not found'));
 
-// Listen on Render port
+// Start server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
