@@ -6,25 +6,24 @@ const path = require('path');
 const db = require('./db');
 
 const app = express();
+
+// Render may proxy traffic
 app.set("trust proxy", true);
 
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 10000;
 const JWT_SECRET = process.env.JWT_SECRET;
 
-if (!PORT) {
-  console.error("PORT missing in .env");
-  process.exit(1);
-}
-
 if (!JWT_SECRET) {
-  console.error("JWT_SECRET missing in .env");
+  console.error("JWT_SECRET missing");
   process.exit(1);
 }
 
+// ----------------------
+// Middleware
+// ----------------------
 app.use(express.json());
 app.use(express.static('public'));
 
-// SECURITY HEADERS
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -34,32 +33,27 @@ app.use((req, res, next) => {
   next();
 });
 
-/* ---------------------------
-   SIMPLE IN-MEMORY RATE LIMIT
----------------------------- */
+// ----------------------
+// Simple in-memory rate limiter
+// ----------------------
 const rate = new Map();
 
 function rateLimit(limit, windowMs) {
   return (req, res, next) => {
     const ip = req.ip;
     const now = Date.now();
-
     if (!rate.has(ip)) rate.set(ip, []);
     const arr = rate.get(ip).filter(t => now - t < windowMs);
     arr.push(now);
     rate.set(ip, arr);
-
-    if (arr.length > limit) {
-      return res.status(429).send("Too many requests");
-    }
-
+    if (arr.length > limit) return res.status(429).send("Too many requests");
     next();
   };
 }
 
-/* ---------------------------
-   HELPERS
----------------------------- */
+// ----------------------
+// Helpers
+// ----------------------
 function generateShortKey() {
   return crypto.randomBytes(4).toString('base64url');
 }
@@ -68,19 +62,17 @@ function hashUA(ua) {
   return crypto.createHash("sha256").update(ua || "").digest("hex");
 }
 
-/* ---------------------------
-   CREATE SHORT LINK
----------------------------- */
+// ----------------------
+// CREATE SHORT LINK
+// ----------------------
 app.post('/add-redirect', rateLimit(20, 60_000), async (req, res) => {
   const { destination } = req.body;
-
   if (!destination || !/^https?:\/\//i.test(destination)) {
     return res.status(400).json({ message: 'Invalid destination URL.' });
   }
 
   let key;
   let saved = false;
-
   while (!saved) {
     key = generateShortKey();
     try {
@@ -92,17 +84,16 @@ app.post('/add-redirect', rateLimit(20, 60_000), async (req, res) => {
   const protocol = req.protocol + '://';
   const host = req.get('host');
   const url = `${protocol}${host}/${key}`;
-
   res.json({ redirectUrl: url });
 });
 
-/* ---------------------------
-   STEP 1: CHALLENGE PAGE
----------------------------- */
+// ----------------------
+// CHALLENGE PAGE
+// ----------------------
 app.get('/:key', rateLimit(60, 60_000), async (req, res) => {
   const key = req.params.key;
 
-  // Block invalid access
+  // Block file access attempts
   if (key.includes('.') || key.length < 4) {
     return res.status(404).send('Not found');
   }
@@ -121,9 +112,9 @@ app.get('/:key', rateLimit(60, 60_000), async (req, res) => {
   return res.sendFile(path.join(__dirname, 'public', 'challenge.html'));
 });
 
-/* ---------------------------
-   STEP 2: VERIFY HUMAN
----------------------------- */
+// ----------------------
+// VERIFY HUMAN
+// ----------------------
 app.post('/verify', rateLimit(30, 60_000), async (req, res) => {
   const d = req.body;
   let score = 0;
@@ -139,14 +130,12 @@ app.post('/verify', rateLimit(30, 60_000), async (req, res) => {
   if (!d.plugins || d.plugins === 0) score += 10;
   if (!d.languages || d.languages === 0) score += 10;
 
-  if (score >= 80) {
-    return res.status(403).json({ ok: false });
-  }
+  if (score >= 80) return res.status(403).json({ ok: false });
 
   const token = jwt.sign(
     {
       rid: d.rid,
-      ip: req.ip,
+      // Optional: store UA/IP, but skip strict binding for Render
       ua: hashUA(req.headers['user-agent']),
       exp: Math.floor(Date.now() / 1000) + 60
     },
@@ -156,31 +145,31 @@ app.post('/verify', rateLimit(30, 60_000), async (req, res) => {
   res.json({ ok: true, token });
 });
 
-/* ---------------------------
-   STEP 3: FINAL REDIRECT
----------------------------- */
+// ----------------------
+// FINAL REDIRECT
+// ----------------------
 app.get('/go', rateLimit(60, 60_000), async (req, res) => {
   try {
     const decoded = jwt.verify(req.query.token, JWT_SECRET);
 
-    // Bind token to IP + UA
-    if (decoded.ip !== req.ip || decoded.ua !== hashUA(req.headers['user-agent'])) {
-      return res.status(403).send("Forbidden");
-    }
-
     const row = await db.getRedirect(decoded.rid);
     if (!row) return res.status(404).send('Not found');
 
+    // Proxy-safe: don't check IP
     return res.redirect(302, row.destination);
   } catch (e) {
     return res.status(403).send('Forbidden');
   }
 });
 
-// Catch-all 404
+// ----------------------
+// 404 fallback
+// ----------------------
 app.use((req, res) => res.status(404).send('Not found'));
 
-// Listen on Render port
+// ----------------------
+// START SERVER
+// ----------------------
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
