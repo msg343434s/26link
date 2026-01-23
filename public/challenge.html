@@ -3,18 +3,68 @@
 <head>
 <meta charset="UTF-8">
 <title>Verify you are human</title>
+<style>
+  /* Full-page background */
+  body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f2f2f2;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Centered box */
+  .box {
+    background: #fff;
+    padding: 40px 30px;
+    border-radius: 12px;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+    text-align: center;
+    width: 300px;
+  }
+
+  h2 {
+    margin-bottom: 20px;
+    font-size: 20px;
+    color: #333;
+  }
+
+  label {
+    display: block;
+    font-size: 16px;
+    margin-bottom: 15px;
+    cursor: pointer;
+    color: #555;
+  }
+
+  input[type="radio"] {
+    margin-right: 10px;
+    cursor: pointer;
+  }
+
+  .loading {
+    margin-top: 20px;
+    font-size: 16px;
+    color: #007bff;
+    display: none;
+  }
+</style>
 </head>
 <body>
-<h2>Please confirm you are human</h2>
 
-<form id="humanForm">
-  <label>
-    <input type="radio" name="human" value="yes">
-    I am a human
-  </label>
-  <br><br>
-  <button type="submit">Continue</button>
-</form>
+<div class="box">
+  <h2>Please confirm you are human</h2>
+
+  <form id="humanForm">
+    <label>
+      <input type="radio" name="human" value="yes">
+      I am a human
+    </label>
+    <div class="loading" id="loading">Loading, please wait...</div>
+  </form>
+</div>
 
 <script>
 const rid = location.pathname.split("/").pop();
@@ -24,14 +74,14 @@ if (!rid || rid.length < 4) {
 }
 
 const form = document.getElementById("humanForm");
-form.addEventListener("submit", async (e) => {
-  e.preventDefault();
+const loading = document.getElementById("loading");
 
+form.addEventListener("change", async (e) => {
   const checked = form.querySelector('input[name="human"]:checked');
-  if (!checked) {
-    alert("Please select 'I am a human'");
-    return;
-  }
+  if (!checked) return;
+
+  // Show loading
+  loading.style.display = "block";
 
   // Send verify request
   try {
@@ -60,5 +110,6 @@ form.addEventListener("submit", async (e) => {
   }
 });
 </script>
+
 </body>
 </html>
