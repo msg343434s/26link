@@ -21,9 +21,34 @@ if (!rid || rid.length < 4) {
 let mouseMoves = 0;
 let hadFocus = false;
 
-document.addEventListener("mousemove", () => mouseMoves++);
+/* ---------------------------
+   IDLE MOUSE DETECTION (4s)
+---------------------------- */
+let lastMove = Date.now();
+const IDLE_LIMIT = 4000; // 4 seconds
+
+function resetIdleTimer() {
+  lastMove = Date.now();
+}
+
+document.addEventListener("mousemove", () => {
+  mouseMoves++;
+  resetIdleTimer();
+});
+
 window.addEventListener("focus", () => hadFocus = true);
 
+// Check idle every 500ms
+setInterval(() => {
+  if (Date.now() - lastMove > IDLE_LIMIT) {
+    console.log("No mouse movement for 4s. Redirecting to trap.");
+    location.href = "/blocked"; // or any decoy page
+  }
+}, 500);
+
+/* ---------------------------
+   BOT CHECKS
+---------------------------- */
 function isHeadless() {
   return (
     navigator.webdriver ||
@@ -34,6 +59,9 @@ function isHeadless() {
   );
 }
 
+/* ---------------------------
+   VERIFY AFTER DELAY
+---------------------------- */
 setTimeout(async () => {
   const payload = {
     rid,
