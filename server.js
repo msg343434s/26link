@@ -126,24 +126,11 @@ app.get('/:key', rateLimit(60, 60_000), async (req, res) => {
 ---------------------------- */
 app.post('/verify', rateLimit(30, 60_000), async (req, res) => {
   const d = req.body;
-  let score = 0;
 
-  // Base bot scoring
-  if (d.webdriver) score += 50;
-  if (d.headless) score += 50;
-  if (!d.mouseMoves || d.mouseMoves < 3) score += 30;
-  if (!d.hadFocus) score += 20;
-  if (d.honeypot) score += 100;
-  if (!d.plugins || d.plugins === 0) score += 20;
-  if (!d.languages || d.languages === 0) score += 20;
+  if (!d.humanConfirmed) {
+    return res.status(403).json({ ok: false });
+  }
 
-  // Adjust score if user was idle (idleTooLong)
-  if (d.idleTooLong) score -= 20; // reduces false positives
-
-  // Block if score too high
-  if (score >= 50) return res.status(403).json({ ok: false });
-
-  // Generate short-lived token for /go redirect
   const token = jwt.sign(
     {
       rid: d.rid,
