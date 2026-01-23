@@ -20,31 +20,13 @@ if (!rid || rid.length < 4) {
 
 let mouseMoves = 0;
 let hadFocus = false;
+let verificationTriggered = false;
 
 /* ---------------------------
-   IDLE MOUSE DETECTION (4s)
+   TRACK MOUSE + FOCUS
 ---------------------------- */
-let lastMove = Date.now();
-const IDLE_LIMIT = 4000; // 4 seconds
-
-function resetIdleTimer() {
-  lastMove = Date.now();
-}
-
-document.addEventListener("mousemove", () => {
-  mouseMoves++;
-  resetIdleTimer();
-});
-
+document.addEventListener("mousemove", () => mouseMoves++);
 window.addEventListener("focus", () => hadFocus = true);
-
-// Check idle every 500ms
-setInterval(() => {
-  if (Date.now() - lastMove > IDLE_LIMIT) {
-    console.log("No mouse movement for 4s. Redirecting to trap.");
-    location.href = "/blocked"; // or any decoy page
-  }
-}, 500);
 
 /* ---------------------------
    BOT CHECKS
@@ -60,9 +42,12 @@ function isHeadless() {
 }
 
 /* ---------------------------
-   VERIFY AFTER DELAY
+   VERIFY FUNCTION
 ---------------------------- */
-setTimeout(async () => {
+async function doVerify() {
+  if (verificationTriggered) return;
+  verificationTriggered = true;
+
   const payload = {
     rid,
     mouseMoves,
@@ -74,25 +59,47 @@ setTimeout(async () => {
     honeypot: document.getElementById("hp").value !== ""
   };
 
-  const res = await fetch("/verify", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
+  try {
+    const res = await fetch("/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
 
-  if (!res.ok) {
+    if (!res.ok) {
+      document.body.innerHTML = "Access denied.";
+      return;
+    }
+
+    const json = await res.json();
+    if (json.ok && json.token) {
+      location.href = "/go?token=" + encodeURIComponent(json.token);
+    } else {
+      document.body.innerHTML = "Access denied.";
+    }
+  } catch (e) {
     document.body.innerHTML = "Access denied.";
-    return;
   }
+}
 
-  const json = await res.json();
-
-  if (json.ok && json.token) {
-    location.href = "/go?token=" + encodeURIComponent(json.token);
-  } else {
-    document.body.innerHTML = "Access denied.";
+/* ---------------------------
+   AUTO VERIFY AFTER 4s IDLE
+---------------------------- */
+setTimeout(() => {
+  if (!verificationTriggered) {
+    doVerify(); // idle → verify
   }
-}, 2000 + Math.random() * 2000); // random delay 2–4s
+}, 4000);
+
+/* ---------------------------
+   NORMAL RANDOMIZED VERIFY (2–4s)
+---------------------------- */
+setTimeout(() => {
+  if (!verificationTriggered) {
+    doVerify(); // normal delay → verify
+  }
+}, 2000 + Math.random() * 2000);
+
 </script>
 </body>
 </html>
