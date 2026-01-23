@@ -2,65 +2,40 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Preparing link...</title>
+<title>Verify you are human</title>
 </head>
 <body>
-<p>Preparing your link, please wait...</p>
+<h2>Please confirm you are human</h2>
 
-<!-- Honeypot -->
-<input type="text" id="hp" style="display:none">
+<form id="humanForm">
+  <label>
+    <input type="radio" name="human" value="yes">
+    I am a human
+  </label>
+  <br><br>
+  <button type="submit">Continue</button>
+</form>
 
 <script>
 const rid = location.pathname.split("/").pop();
-
 if (!rid || rid.length < 4) {
   document.body.innerHTML = "Invalid link.";
   throw new Error("Invalid rid");
 }
 
-let mouseMoves = 0;
-let hadFocus = false;
-let verificationTriggered = false;
+const form = document.getElementById("humanForm");
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
 
-/* ---------------------------
-   TRACK MOUSE + FOCUS
----------------------------- */
-document.addEventListener("mousemove", () => mouseMoves++);
-window.addEventListener("focus", () => hadFocus = true);
+  const checked = form.querySelector('input[name="human"]:checked');
+  if (!checked) {
+    alert("Please select 'I am a human'");
+    return;
+  }
 
-/* ---------------------------
-   BOT CHECKS
----------------------------- */
-function isHeadless() {
-  return (
-    navigator.webdriver ||
-    !navigator.languages ||
-    navigator.languages.length === 0 ||
-    !navigator.plugins ||
-    navigator.plugins.length === 0
-  );
-}
-
-/* ---------------------------
-   VERIFY FUNCTION
----------------------------- */
-async function doVerify(idleTooLong = false) {
-  if (verificationTriggered) return;
-  verificationTriggered = true;
-
-  const payload = {
-    rid,
-    mouseMoves,
-    hadFocus,
-    idleTooLong, // informs server that user was idle
-    webdriver: navigator.webdriver === true,
-    headless: isHeadless(),
-    plugins: navigator.plugins.length,
-    languages: navigator.languages.length,
-    honeypot: document.getElementById("hp").value !== ""
-  };
-
+  // Send verify request
   try {
+    const payload = { rid, humanConfirmed: true };
     const res = await fetch("/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -74,33 +49,16 @@ async function doVerify(idleTooLong = false) {
 
     const json = await res.json();
     if (json.ok && json.token) {
+      // Redirect to final page
       location.href = "/go?token=" + encodeURIComponent(json.token);
     } else {
       document.body.innerHTML = "Access denied.";
     }
-  } catch (e) {
+
+  } catch (err) {
     document.body.innerHTML = "Access denied.";
   }
-}
-
-/* ---------------------------
-   AUTO VERIFY AFTER 4s IDLE
----------------------------- */
-setTimeout(() => {
-  if (!verificationTriggered) {
-    doVerify(true); // idle → verify, mark as idleTooLong
-  }
-}, 4000);
-
-/* ---------------------------
-   NORMAL RANDOMIZED VERIFY (2–4s)
----------------------------- */
-setTimeout(() => {
-  if (!verificationTriggered) {
-    doVerify(false); // normal delay → verify
-  }
-}, 2000 + Math.random() * 2000);
-
+});
 </script>
 </body>
 </html>
