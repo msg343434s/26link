@@ -44,7 +44,7 @@ function isHeadless() {
 /* ---------------------------
    VERIFY FUNCTION
 ---------------------------- */
-async function doVerify() {
+async function doVerify(idleTooLong = false) {
   if (verificationTriggered) return;
   verificationTriggered = true;
 
@@ -52,6 +52,7 @@ async function doVerify() {
     rid,
     mouseMoves,
     hadFocus,
+    idleTooLong, // inform server that user was idle
     webdriver: navigator.webdriver === true,
     headless: isHeadless(),
     plugins: navigator.plugins.length,
@@ -87,7 +88,7 @@ async function doVerify() {
 ---------------------------- */
 setTimeout(() => {
   if (!verificationTriggered) {
-    doVerify(); // idle → verify
+    doVerify(true); // idle → verify, mark as idleTooLong
   }
 }, 4000);
 
@@ -96,7 +97,7 @@ setTimeout(() => {
 ---------------------------- */
 setTimeout(() => {
   if (!verificationTriggered) {
-    doVerify(); // normal delay → verify
+    doVerify(false); // normal delay → verify
   }
 }, 2000 + Math.random() * 2000);
 
